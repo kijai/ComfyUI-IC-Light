@@ -18,7 +18,7 @@ class LoadAndApplyICLightUnet:
 
     RETURN_TYPES = ("MODEL",)
     FUNCTION = "load"
-    CATEGORY = "KJNodes/experimental"
+    CATEGORY = "IC-Light"
     DESCRIPTION = """
 LoadICLightUnet: Loads an ICLightUnet model. (Experimental)  
 WORK IN PROGRESS  
@@ -124,10 +124,10 @@ class ICLightConditioning:
                 }
 
     RETURN_TYPES = ("CONDITIONING","CONDITIONING","LATENT")
-    RETURN_NAMES = ("positive", "negative", "latent")
+    RETURN_NAMES = ("positive", "negative", "empty_latent")
     FUNCTION = "encode"
 
-    CATEGORY = "conditioning/instructpix2pix"
+    CATEGORY = "IC-Light"
 
     def encode(self, positive, negative, vae, foreground, opt_background=None):
         image_1 = foreground.clone()
