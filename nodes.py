@@ -3,7 +3,6 @@ import folder_paths
 import os
 import types
 from comfy.utils import load_torch_file
-from comfy.model_base import IP2P
 from .utils.convert_unet import convert_iclight_unet
 
 class LoadAndApplyICLightUnet:
@@ -74,22 +73,20 @@ Used with ICLightConditioning -node
                 model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
                 # Verify the change
                 print(f"LoadAndApplyICLightUnet: New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
-            
-            # Monkey patch because I don't know what I'm doing
-            # Dynamically add the extra_conds method from IP2P to the instance of BaseModel
+                
+            # Mimic the existing IP2P class to enable extra_conds
             def bound_extra_conds(self, **kwargs):
-                return ICLight.extra_conds(self, **kwargs)
-            model_clone.model.extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
-           
+                 return ICLight.extra_conds(self, **kwargs)
+            new_extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
+            model_clone.add_object_patch("extra_conds", new_extra_conds)
+
             return (model_clone, )
 
 import comfy
 class ICLight:
     def extra_conds(self, **kwargs):
         out = {}
-
-        process_ip2p_image_in = lambda image: image
-
+        
         image = kwargs.get("concat_latent_image", None)
         noise = kwargs.get("noise", None)
         device = kwargs["device"]
@@ -102,7 +99,8 @@ class ICLight:
 
         image = comfy.utils.resize_to_batch_size(image, noise.shape[0])
 
-        out['c_concat'] = comfy.conds.CONDNoiseShape(process_ip2p_image_in(image))
+        process_image_in = lambda image: image
+        out['c_concat'] = comfy.conds.CONDNoiseShape(process_image_in(image))
         
         adm = self.encode_adm(**kwargs)
         if adm is not None:
