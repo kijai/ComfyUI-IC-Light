@@ -116,7 +116,7 @@ class ICLightConditioning:
                              "negative": ("CONDITIONING", ),
                              "vae": ("VAE", ),
                              "foreground": ("IMAGE", ),
-                             
+                             "multiplier": ("FLOAT", {"default": 0.18215, "min": 0.0, "max": 1.0, "step": 0.001}),
                              },
                 "optional": {
                      "opt_background": ("IMAGE", ),
@@ -129,7 +129,7 @@ class ICLightConditioning:
 
     CATEGORY = "IC-Light"
 
-    def encode(self, positive, negative, vae, foreground, opt_background=None):
+    def encode(self, positive, negative, vae, foreground, multiplier, opt_background=None):
         image_1 = foreground.clone()
         
         # Process image_1
@@ -169,11 +169,11 @@ class ICLightConditioning:
             c = []
             for t in conditioning:
                 d = t[1].copy()
-                d["concat_latent_image"] = concat_latent
+                d["concat_latent_image"] = concat_latent * multiplier
                 n = [t[0], d]
                 c.append(n)
             out.append(c)
-        return (out[0], out[1], out_latent)
+        return (out[0], out[1], negative, out_latent)
     
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
