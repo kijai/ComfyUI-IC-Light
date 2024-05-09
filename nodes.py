@@ -30,63 +30,85 @@ Used with InstructPixToPixConditioning -node
 """
 
     def load(self, model, model_path):
-        print("LoadICLightUnet: Checking LoadICLightUnet path")
+        print("LoadAndApplyICLightUnet: Checking IC-Light Unet path")
         model_full_path = folder_paths.get_full_path("unet", model_path)
         if not os.path.exists(model_full_path):
             raise Exception("Invalid model path")
         else:
-            print("LoadICLightUnet: Loading LoadICLightUnet weights")
+            print("LoadAndApplyICLightUnet: Loading IC-Light Unet weights")
             model_clone = model.clone()
 
-            conv_layer = model_clone.model.diffusion_model.input_blocks[0][0]
-            print(f"Current number of input channels: {conv_layer.in_channels}")
-            
-            # Create a new Conv2d layer with 8 or 12 input channels
-            if not "fbc" in model_path:
-                in_channels = 8
-            else:
-                in_channels = 12
+            iclight_state_dict = load_torch_file(model_full_path)             
+            for key, value in iclight_state_dict.items():
+                if key.startswith('conv_in.weight'):
+                    in_channels = value.shape[1]
+                    break
 
-            if model_clone.model.diffusion_model.input_blocks[0][0].in_channels == 4:
-                new_conv_layer = torch.nn.Conv2d(in_channels, conv_layer.out_channels, kernel_size=conv_layer.kernel_size, stride=conv_layer.stride, padding=conv_layer.padding)
-                new_conv_layer.weight.zero_()
-                new_conv_layer.weight[:, :4, :, :].copy_(conv_layer.weight)
-                new_conv_layer.bias = conv_layer.bias
-                new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
-                conv_layer.conv_in = new_conv_layer
-                # Replace the old layer with the new one
-                model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
-                # Verify the change
-                print(f"New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
-            
-            # Monkey patch because I don't know what I'm doing
-            # Dynamically add the extra_conds method from IP2P to the instance of BaseModel
-            def bound_extra_conds(self, **kwargs):
-                return IP2P.extra_conds(self, **kwargs)
-            model_clone.model.process_ip2p_image_in = lambda image: image
-            model_clone.model.extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
-           
-            # Some Proper patching (I hope)
-            
-            new_state_dict = load_torch_file(model_full_path)
+            # Add weights as patches
+            new_keys_dict = convert_iclight_unet(iclight_state_dict)
 
-            if new_state_dict:
-                if any(key.startswith('model.') for key in new_state_dict):
-                    new_keys_dict = {key[len('model.'):]: new_state_dict[key] for key in new_state_dict if key.startswith('model.')}
-                    pass
-                else:
-                    new_keys_dict = convert_iclight_unet(new_state_dict)
-
-            print("LoadICLightUnet: Attempting to add patches with LoadICLightUnet weights")
+            print("LoadAndApplyICLightUnet: Attempting to add patches with IC-Light Unet weights")
             try:
                 for key in new_keys_dict:
                     model_clone.add_patches({key: (new_keys_dict[key],)}, 1.0, 1.0)
             except:
                 raise Exception("Could not patch model")
-            print("LoadICLightUnet: Added LoadICLightUnet patches")
+            print("LoadAndApplyICLightUnet: Added LoadICLightUnet patches")
+
+            # Create a new Conv2d layer with 8 or 12 input channels
+            original_conv_layer = model_clone.model.diffusion_model.input_blocks[0][0]
+            print(f"LoadAndApplyICLightUnet: Input channels in currently loaded model: {original_conv_layer.in_channels}")
+          
+            print("LoadAndApplyICLightUnet: Settings in_channels to: ", in_channels)
+            
+            if model_clone.model.diffusion_model.input_blocks[0][0].in_channels != in_channels:
+                new_conv_layer = torch.nn.Conv2d(in_channels, original_conv_layer.out_channels, kernel_size=original_conv_layer.kernel_size, stride=original_conv_layer.stride, padding=original_conv_layer.padding)
+                new_conv_layer.weight.zero_()
+                new_conv_layer.weight[:, :original_conv_layer.in_channels, :, :].copy_(original_conv_layer.weight)
+                new_conv_layer.bias = original_conv_layer.bias
+                new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
+                original_conv_layer.conv_in = new_conv_layer
+                # Replace the old layer with the new one
+                model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
+                # Verify the change
+                print(f"LoadAndApplyICLightUnet: New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
+            
+            # Monkey patch because I don't know what I'm doing
+            # Dynamically add the extra_conds method from IP2P to the instance of BaseModel
+            def bound_extra_conds(self, **kwargs):
+                return ICLight.extra_conds(self, **kwargs)
+            #model_clone.model.process_ip2p_image_in = lambda image: image
+            model_clone.model.extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
+           
+           
 
             return (model_clone, )
-        
+
+import comfy
+class ICLight:
+    def extra_conds(self, **kwargs):
+        out = {}
+
+        process_ip2p_image_in = lambda image: image
+
+        image = kwargs.get("concat_latent_image", None)
+        noise = kwargs.get("noise", None)
+        device = kwargs["device"]
+
+        if image is None:
+            image = torch.zeros_like(noise)
+
+        if image.shape[1:] != noise.shape[1:]:
+            image = comfy.utils.common_upscale(image.to(device), noise.shape[-1], noise.shape[-2], "bilinear", "center")
+
+        image = comfy.utils.resize_to_batch_size(image, noise.shape[0])
+
+        out['c_concat'] = comfy.conds.CONDNoiseShape(process_ip2p_image_in(image))
+        adm = self.encode_adm(**kwargs)
+        if adm is not None:
+            out['y'] = comfy.conds.CONDRegular(adm)
+        return out
+    
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet
 }
