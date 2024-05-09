@@ -115,11 +115,11 @@ class ICLightConditioning:
         return {"required": {"positive": ("CONDITIONING", ),
                              "negative": ("CONDITIONING", ),
                              "vae": ("VAE", ),
-                             "foreground": ("IMAGE", ),
+                             "foreground": ("LATENT", ),
                              "multiplier": ("FLOAT", {"default": 0.18215, "min": 0.0, "max": 1.0, "step": 0.001}),
                              },
                 "optional": {
-                     "opt_background": ("IMAGE", ),
+                     "opt_background": ("LATENT", ),
                      },
                 }
 
@@ -130,35 +130,14 @@ class ICLightConditioning:
     CATEGORY = "IC-Light"
 
     def encode(self, positive, negative, vae, foreground, multiplier, opt_background=None):
-        image_1 = foreground.clone()
-        
-        # Process image_1
-        x = (image_1.shape[1] // 8) * 8
-        y = (image_1.shape[2] // 8) * 8
-
-        if image_1.shape[1]!= x or image_1.shape[2]!= y:
-            x_offset = (image_1.shape[1] % 8) // 2
-            y_offset = (image_1.shape[2] % 8) // 2
-            image_1 = image_1[:,x_offset:x + x_offset, y_offset:y + y_offset,:]
-
-        concat_latent_1 = vae.encode(image_1)
+        samples_1 = foreground["samples"]
 
         if opt_background is not None:
-            image_2 = opt_background.clone()
-            # Process image_2
-            x = (image_2.shape[1] // 8) * 8
-            y = (image_2.shape[2] // 8) * 8
+            samples_2 = opt_background["samples"]
 
-            if image_2.shape[1]!= x or image_2.shape[2]!= y:
-                x_offset = (image_2.shape[1] % 8) // 2
-                y_offset = (image_2.shape[2] % 8) // 2
-                image_2 = image_2[:,x_offset:x + x_offset, y_offset:y + y_offset,:]
-
-            concat_latent_2 = vae.encode(image_2)
-
-            concat_latent = torch.cat((concat_latent_1, concat_latent_2), dim=1)
+            concat_latent = torch.cat((samples_1, samples_2), dim=1)
         else:
-            concat_latent = concat_latent_1
+            concat_latent = samples_1
         print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
 
         out_latent = {}
