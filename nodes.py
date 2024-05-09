@@ -19,10 +19,14 @@ class LoadAndApplyICLightUnet:
     FUNCTION = "load"
     CATEGORY = "IC-Light"
     DESCRIPTION = """
-LoadICLightUnet: Loads an ICLightUnet model. (Experimental)  
-WORK IN PROGRESS  
-Very hacky (but currently working) way to load the diffusers IC-Light models available here:  
+  
+Bit hacky (but currently working) way to load the diffusers IC-Light models available here:  
 https://huggingface.co/lllyasviel/ic-light/tree/main  
+
+Currently this **permanently** changes the in_channels of the loaded model, 
+to unload this you would need to disable this node and change checkpoint.  
+For the same reason this node needs to be the **first** model node after  
+checkpoint loader.  
   
 Used with ICLightConditioning -node  
 """
@@ -124,8 +128,14 @@ class ICLightConditioning:
     RETURN_TYPES = ("CONDITIONING","CONDITIONING","LATENT")
     RETURN_NAMES = ("positive", "negative", "empty_latent")
     FUNCTION = "encode"
-
     CATEGORY = "IC-Light"
+    DESCRIPTION = """
+  
+Conditioning for the IC-Light model.  
+To use the "opt_background" input, you also need to use the  
+"fbc" version of the IC-Light models.  
+  
+"""
 
     def encode(self, positive, negative, vae, foreground, multiplier, opt_background=None):
         samples_1 = foreground["samples"]
