@@ -2,9 +2,9 @@
 
 # WORK IN PROGRESS
 
-For now only works with:
+For now only works with the 8 channel models "fc" and "fcon":
 
-[https://huggingface.co/Kijai/iclight-comfy/tree/main](https://huggingface.co/Kijai/iclight-comfy/blob/main/iclight_fc_converted.safetensors)
+https://huggingface.co/lllyasviel/ic-light/tree/main
 
 The patching is unfinished and probably has compability issues with other stuff, and won't unload properly.
 
