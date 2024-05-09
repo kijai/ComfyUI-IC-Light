@@ -20,13 +20,12 @@ class LoadAndApplyICLightUnet:
     FUNCTION = "load"
     CATEGORY = "KJNodes/experimental"
     DESCRIPTION = """
-LoadICLightUnet: Loads an ICLightUnet model. (Experimental)
+LoadICLightUnet: Loads an ICLightUnet model. (Experimental)  
 WORK IN PROGRESS  
-Very hacky (but currently working) way to load the converted IC-Light model available here:  
-https://huggingface.co/Kijai/iclight-comfy/blob/main/iclight_fc_converted.safetensors  
-
-Used with InstructPixToPixConditioning -node
-
+Very hacky (but currently working) way to load the diffusers IC-Light models available here:  
+https://huggingface.co/lllyasviel/ic-light/tree/main  
+  
+Used with ICLightConditioning -node  
 """
 
     def load(self, model, model_path):
@@ -48,6 +47,7 @@ Used with InstructPixToPixConditioning -node
             new_keys_dict = convert_iclight_unet(iclight_state_dict)
 
             print("LoadAndApplyICLightUnet: Attempting to add patches with IC-Light Unet weights")
+            model_clone.unpatch_model()
             try:
                 for key in new_keys_dict:
                     model_clone.add_patches({key: (new_keys_dict[key],)}, 1.0, 1.0)
@@ -55,16 +55,18 @@ Used with InstructPixToPixConditioning -node
                 raise Exception("Could not patch model")
             print("LoadAndApplyICLightUnet: Added LoadICLightUnet patches")
 
-            # Create a new Conv2d layer with 8 or 12 input channels
+            # Create a new Conv2d layer with 8 or 12 input channels   
             original_conv_layer = model_clone.model.diffusion_model.input_blocks[0][0]
+
             print(f"LoadAndApplyICLightUnet: Input channels in currently loaded model: {original_conv_layer.in_channels}")
           
             print("LoadAndApplyICLightUnet: Settings in_channels to: ", in_channels)
             
             if model_clone.model.diffusion_model.input_blocks[0][0].in_channels != in_channels:
+                num_channels_to_copy = min(in_channels, original_conv_layer.in_channels)
                 new_conv_layer = torch.nn.Conv2d(in_channels, original_conv_layer.out_channels, kernel_size=original_conv_layer.kernel_size, stride=original_conv_layer.stride, padding=original_conv_layer.padding)
                 new_conv_layer.weight.zero_()
-                new_conv_layer.weight[:, :original_conv_layer.in_channels, :, :].copy_(original_conv_layer.weight)
+                new_conv_layer.weight[:, :num_channels_to_copy, :, :].copy_(original_conv_layer.weight[:, :num_channels_to_copy, :, :])
                 new_conv_layer.bias = original_conv_layer.bias
                 new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
                 original_conv_layer.conv_in = new_conv_layer
@@ -77,11 +79,8 @@ Used with InstructPixToPixConditioning -node
             # Dynamically add the extra_conds method from IP2P to the instance of BaseModel
             def bound_extra_conds(self, **kwargs):
                 return ICLight.extra_conds(self, **kwargs)
-            #model_clone.model.process_ip2p_image_in = lambda image: image
             model_clone.model.extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
            
-           
-
             return (model_clone, )
 
 import comfy
@@ -104,14 +103,83 @@ class ICLight:
         image = comfy.utils.resize_to_batch_size(image, noise.shape[0])
 
         out['c_concat'] = comfy.conds.CONDNoiseShape(process_ip2p_image_in(image))
+        
         adm = self.encode_adm(**kwargs)
         if adm is not None:
             out['y'] = comfy.conds.CONDRegular(adm)
         return out
+
+class ICLightConditioning:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {"positive": ("CONDITIONING", ),
+                             "negative": ("CONDITIONING", ),
+                             "vae": ("VAE", ),
+                             "foreground": ("IMAGE", ),
+                             
+                             },
+                "optional": {
+                     "opt_background": ("IMAGE", ),
+                     },
+                }
+
+    RETURN_TYPES = ("CONDITIONING","CONDITIONING","LATENT")
+    RETURN_NAMES = ("positive", "negative", "latent")
+    FUNCTION = "encode"
+
+    CATEGORY = "conditioning/instructpix2pix"
+
+    def encode(self, positive, negative, vae, foreground, opt_background=None):
+        image_1 = foreground.clone()
+        
+        # Process image_1
+        x = (image_1.shape[1] // 8) * 8
+        y = (image_1.shape[2] // 8) * 8
+
+        if image_1.shape[1]!= x or image_1.shape[2]!= y:
+            x_offset = (image_1.shape[1] % 8) // 2
+            y_offset = (image_1.shape[2] % 8) // 2
+            image_1 = image_1[:,x_offset:x + x_offset, y_offset:y + y_offset,:]
+
+        concat_latent_1 = vae.encode(image_1)
+
+        if opt_background is not None:
+            image_2 = opt_background.clone()
+            # Process image_2
+            x = (image_2.shape[1] // 8) * 8
+            y = (image_2.shape[2] // 8) * 8
+
+            if image_2.shape[1]!= x or image_2.shape[2]!= y:
+                x_offset = (image_2.shape[1] % 8) // 2
+                y_offset = (image_2.shape[2] % 8) // 2
+                image_2 = image_2[:,x_offset:x + x_offset, y_offset:y + y_offset,:]
+
+            concat_latent_2 = vae.encode(image_2)
+
+            concat_latent = torch.cat((concat_latent_1, concat_latent_2), dim=1)
+        else:
+            concat_latent = concat_latent_1
+        print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
+
+        out_latent = {}
+        out_latent["samples"] = torch.zeros_like(concat_latent)
+
+        out = []
+        for conditioning in [positive, negative]:
+            c = []
+            for t in conditioning:
+                d = t[1].copy()
+                d["concat_latent_image"] = concat_latent
+                n = [t[0], d]
+                c.append(n)
+            out.append(c)
+        return (out[0], out[1], out_latent)
     
 NODE_CLASS_MAPPINGS = {
-    "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet
+    "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
+    "ICLightConditioning": ICLightConditioning
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LoadAndApplyICLightUnet": "Load And Apply IC-Light"
+    "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
+    "ICLightConditioning": "IC-Light Conditioning"
 }
