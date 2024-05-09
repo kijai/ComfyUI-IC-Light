@@ -4,6 +4,7 @@ import os
 import types
 from comfy.utils import load_torch_file
 from comfy.model_base import IP2P
+from .utils.convert_unet import convert_iclight_unet
 
 class LoadAndApplyICLightUnet:
     @classmethod
@@ -46,16 +47,17 @@ Used with InstructPixToPixConditioning -node
             else:
                 in_channels = 12
 
-            new_conv_layer = torch.nn.Conv2d(in_channels, conv_layer.out_channels, kernel_size=conv_layer.kernel_size, stride=conv_layer.stride, padding=conv_layer.padding)
-            new_conv_layer.weight.zero_()
-            new_conv_layer.weight[:, :4, :, :].copy_(conv_layer.weight)
-            new_conv_layer.bias = conv_layer.bias
-            new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
-            conv_layer.conv_in = new_conv_layer
-            # Replace the old layer with the new one
-            model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
-            # Verify the change
-            print(f"New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
+            if model_clone.model.diffusion_model.input_blocks[0][0].in_channels == 4:
+                new_conv_layer = torch.nn.Conv2d(in_channels, conv_layer.out_channels, kernel_size=conv_layer.kernel_size, stride=conv_layer.stride, padding=conv_layer.padding)
+                new_conv_layer.weight.zero_()
+                new_conv_layer.weight[:, :4, :, :].copy_(conv_layer.weight)
+                new_conv_layer.bias = conv_layer.bias
+                new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
+                conv_layer.conv_in = new_conv_layer
+                # Replace the old layer with the new one
+                model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
+                # Verify the change
+                print(f"New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
             
             # Monkey patch because I don't know what I'm doing
             # Dynamically add the extra_conds method from IP2P to the instance of BaseModel
@@ -65,9 +67,15 @@ Used with InstructPixToPixConditioning -node
             model_clone.model.extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
            
             # Some Proper patching (I hope)
+            
             new_state_dict = load_torch_file(model_full_path)
-            prefix_to_remove = 'model.'
-            new_keys_dict = {key[len(prefix_to_remove):]: new_state_dict[key] for key in new_state_dict if key.startswith(prefix_to_remove)}
+
+            if new_state_dict:
+                if any(key.startswith('model.') for key in new_state_dict):
+                    new_keys_dict = {key[len('model.'):]: new_state_dict[key] for key in new_state_dict if key.startswith('model.')}
+                    pass
+                else:
+                    new_keys_dict = convert_iclight_unet(new_state_dict)
 
             print("LoadICLightUnet: Attempting to add patches with LoadICLightUnet weights")
             try:
