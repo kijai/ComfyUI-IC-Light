@@ -38,10 +38,10 @@ Used with ICLightConditioning -node
             model_clone = model.clone()
 
             iclight_state_dict = load_torch_file(model_full_path)             
-            for key, value in iclight_state_dict.items():
-                if key.startswith('conv_in.weight'):
-                    in_channels = value.shape[1]
-                    break
+            # for key, value in iclight_state_dict.items():
+            #     if key.startswith('conv_in.weight'):
+            #         in_channels = value.shape[1]
+            #         break
 
             # Add weights as patches
             new_keys_dict = convert_iclight_unet(iclight_state_dict)
