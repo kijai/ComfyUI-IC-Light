@@ -176,61 +176,73 @@ class LightPosition(Enum):
     BOTTOM_LEFT = "Bottom Left Light"
     BOTTOM_RIGHT = "Bottom Right Light"
 
-def generate_gradient_image(width:int, height:int, color_rgb: tuple, multiplier: float, lightPosition:LightPosition):
+def toRgb(color):
+    if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
+        color_rgb =tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+    else:  # e.g. "255,255,255"
+        color_rgb = tuple(int(i) for i in color.split(','))
+    return color_rgb
+
+def generate_gradient_image(width:int, height:int, start_color: tuple, end_color: tuple, multiplier: float, lightPosition:LightPosition):
     """
     Generate a gradient image with a light source effect.
-    
+
     Parameters:
     width (int): Width of the image.
     height (int): Height of the image.
-    color_rgb: Color RGB of the image.
-    multiplier: weight of light.
-    lightPosition (str): Position of the light source. 
-                     It can be 'Left Light', 'Right Light', 'Top Light', 'Bottom Light',
-                     'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.
-    
+    start_color: Starting color RGB of the gradient.
+    end_color: Ending color RGB of the gradient.
+    multiplier: Weight of light.
+    lightPosition (LightPosition): Position of the light source.
+
     Returns:
     np.array: 2D gradient image array.
     """
+    # Create a gradient from 0 to 1 and apply multiplier
     if lightPosition == LightPosition.LEFT:
-        gradient = np.tile(np.linspace(1, 0, width), (height, 1))
+        gradient = np.tile(np.linspace(0, 1, width)**multiplier, (height, 1))
     elif lightPosition == LightPosition.RIGHT:
-        gradient = np.tile(np.linspace(0, 1, width), (height, 1))
+        gradient = np.tile(np.linspace(1, 0, width)**multiplier, (height, 1))
     elif lightPosition == LightPosition.TOP:
-        gradient = np.tile(np.linspace(1, 0, height), (width, 1)).T
+        gradient = np.tile(np.linspace(0, 1, height)**multiplier, (width, 1)).T
     elif lightPosition == LightPosition.BOTTOM:
-        gradient = np.tile(np.linspace(0, 1, height), (width, 1)).T
-    elif lightPosition == LightPosition.TOP_LEFT:
-        x = np.linspace(1, 0, width)
-        y = np.linspace(1, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.TOP_RIGHT:
-        x = np.linspace(0, 1, width)
-        y = np.linspace(1, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.BOTTOM_LEFT:
-        x = np.linspace(1, 0, width)
-        y = np.linspace(0, 1, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
+        gradient = np.tile(np.linspace(1, 0, height)**multiplier, (width, 1)).T
     elif lightPosition == LightPosition.BOTTOM_RIGHT:
-        x = np.linspace(0, 1, width)
-        y = np.linspace(0, 1, height)
+        x = np.linspace(1, 0, width)**multiplier
+        y = np.linspace(1, 0, height)**multiplier
         x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
+        gradient = np.sqrt(x_mesh**2 + y_mesh**2) / np.sqrt(2.0)
+    elif lightPosition == LightPosition.BOTTOM_LEFT:
+        x = np.linspace(0, 1, width)**multiplier
+        y = np.linspace(1, 0, height)**multiplier
+        x_mesh, y_mesh = np.meshgrid(x, y)
+        gradient = np.sqrt(x_mesh**2 + y_mesh**2) / np.sqrt(2.0)
+    elif lightPosition == LightPosition.TOP_RIGHT:
+        x = np.linspace(1, 0, width)**multiplier
+        y = np.linspace(0, 1, height)**multiplier
+        x_mesh, y_mesh = np.meshgrid(x, y)
+        gradient = np.sqrt(x_mesh**2 + y_mesh**2) / np.sqrt(2.0)
+    elif lightPosition == LightPosition.TOP_LEFT:
+        x = np.linspace(0, 1, width)**multiplier
+        y = np.linspace(0, 1, height)**multiplier
+        x_mesh, y_mesh = np.meshgrid(x, y)
+        gradient = np.sqrt(x_mesh**2 + y_mesh**2) / np.sqrt(2.0)
     else:
-        raise ValueError("Unsupported position. Choose from 'Left Light', 'Right Light', 'Top Light', 'Bottom Light','Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.")
-    
-    gradient = gradient * multiplier
-    gradient_x = gradient * color_rgb[0]
-    gradient_y = gradient * color_rgb[1]
-    gradient_z = gradient * color_rgb[2]
-    gradient = [gradient_x, gradient_y, gradient_z]
-    gradient = np.stack(gradient, axis=-1).astype(np.uint8)
+        raise ValueError(f"Unsupported position. Choose from {', '.join([member.value for member in LightPosition])}.")
 
-    return gradient
+    # Interpolate between start_color and end_color based on the gradient
+    gradient_img = np.zeros((height, width, 3), dtype=np.float32)
+    for i in range(3):
+        gradient_img[..., i] = start_color[i] + (end_color[i] - start_color[i]) * gradient
+    
+    gradient_img = np.clip(gradient_img, 0, 255).astype(np.uint8)
+    return gradient_img
+
+
+def numpy_to_tensor(array: np.ndarray) -> torch.Tensor:
+    """Convert a numpy array to a tensor and scale its values from 0-255 to 0-1."""
+    array = array.astype(np.float32) / 255.0
+    return torch.from_numpy(array)[None,]
 
 
 class LightSource:
@@ -238,13 +250,12 @@ class LightSource:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "light_position": (["Left Light", "Right Light", "Top Light", "Bottom Light",'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'],),
-                "multiplier": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "color": ("STRING", {"default": "#ffffff"}),
+                "light_position": ([member.value for member in LightPosition],),
+                "multiplier": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.001}),
+                "start_color": ("STRING", {"default": "#FFFFFF"}),
+                "end_color": ("STRING", {"default": "#000000"}),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "multiplier": ("FLOAT", { "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, }),
-                "color": ("STRING", {"default": "#FFFFFF"})
+                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, })
             } 
         }
     
@@ -254,19 +265,13 @@ class LightSource:
     CATEGORY = "IC-Light"
     DESCRIPTION = """Simple Light Source"""
 
-    def execute(self, light_position, multiplier, color, width, height):
-        if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
-            color_hex = color.lstrip('#')
-            color_rgb =tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
-        else:
-            color_rgb = tuple(int(i) for i in color.split(','))
-        
+    def execute(self, light_position, multiplier, start_color, end_color, width, height):
         lightPosition = LightPosition(light_position)
-        image = generate_gradient_image(width, height, color_rgb, multiplier, lightPosition)
+        start_color_rgb = toRgb(start_color)
+        end_color_rgb = toRgb(end_color)
         
-        # Convert a numpy array to a tensor and scale its values from 0-255 to 0-1
-        image = image.astype(np.float32) / 255.0
-        image = torch.from_numpy(image)[None,]
+        image = generate_gradient_image(width, height, start_color_rgb, end_color_rgb, multiplier, lightPosition)
+        image = numpy_to_tensor(image)
         return (image,)
 
     
