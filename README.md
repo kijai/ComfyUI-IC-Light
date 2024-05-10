@@ -1,6 +1,6 @@
 # ComfyUI native implementation of IC-Light
 
-# WORK IN PROGRESS
+### WORK IN PROGRESS
 Huge thanks to lllyasviel for yet more amazing models!
 Original repository: https://github.com/lllyasviel/IC-Light
 
