@@ -162,79 +162,6 @@ To use the "opt_background" input, you also need to use the
                 n = [t[0], d]
                 c.append(n)
             out.append(c)
-        return (out[0], out[1], negative, out_latent)
-    
-### Light Source
-import numpy as np
-from enum import Enum
-from nodes import MAX_RESOLUTION
-
-class LightPosition(Enum):
-    LEFT = "Left Light"
-    RIGHT = "Right Light"
-    TOP = "Top Light"
-    BOTTOM = "Bottom Light"
-    TOP_LEFT = "Top Left Light"
-    TOP_RIGHT = "Top Right Light"
-    BOTTOM_LEFT = "Bottom Left Light"
-    BOTTOM_RIGHT = "Bottom Right Light"
-
-def generate_gradient_image(width:int, height:int, color_rgb: tuple, multiplier: float, lightPosition:LightPosition):
-    """
-    Generate a gradient image with a light source effect.
-    
-    Parameters:
-    width (int): Width of the image.
-    height (int): Height of the image.
-    color_rgb: Color RGB of the image.
-    multiplier: weight of light.
-    lightPosition (str): Position of the light source. 
-                     It can be 'Left Light', 'Right Light', 'Top Light', 'Bottom Light',
-                     'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.
-    
-    Returns:
-    np.array: 2D gradient image array.
-    """
-    if lightPosition == LightPosition.LEFT:
-        gradient = np.tile(np.linspace(1, 0, width), (height, 1))
-    elif lightPosition == LightPosition.RIGHT:
-        gradient = np.tile(np.linspace(0, 1, width), (height, 1))
-    elif lightPosition == LightPosition.TOP:
-        gradient = np.tile(np.linspace(1, 0, height), (width, 1)).T
-    elif lightPosition == LightPosition.BOTTOM:
-        gradient = np.tile(np.linspace(0, 1, height), (width, 1)).T
-    elif lightPosition == LightPosition.TOP_LEFT:
-        x = np.linspace(1, 0, width)
-        y = np.linspace(1, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.TOP_RIGHT:
-        x = np.linspace(0, 1, width)
-        y = np.linspace(1, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.BOTTOM_LEFT:
-        x = np.linspace(1, 0, width)
-        y = np.linspace(0, 1, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.BOTTOM_RIGHT:
-        x = np.linspace(0, 1, width)
-        y = np.linspace(0, 1, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    else:
-        raise ValueError("Unsupported position. Choose from 'Left Light', 'Right Light', 'Top Light', 'Bottom Light','Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.")
-    
-    gradient = gradient * multiplier
-    gradient_x = gradient * color_rgb[0]
-    gradient_y = gradient * color_rgb[1]
-    gradient_z = gradient * color_rgb[2]
-    gradient = [gradient_x, gradient_y, gradient_z]
-    gradient = np.stack(gradient, axis=-1).astype(np.uint8)
-
-    return gradient
-
         return (out[0], out[1], {"samples": out_latent})
 
 class LightSource:
@@ -242,13 +169,12 @@ class LightSource:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "light_position": (["Left Light", "Right Light", "Top Light", "Bottom Light",'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'],),
-                "multiplier": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
-                "color": ("STRING", {"default": "#ffffff"}),
+                "light_position": ([member.value for member in LightPosition],),
+                "multiplier": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 100.0, "step": 0.001}),
+                "start_color": ("STRING", {"default": "#FFFFFF"}),
+                "end_color": ("STRING", {"default": "#000000"}),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "multiplier": ("FLOAT", { "default": 1.0, "min": 0.0, "max": 100.0, "step": 0.01, }),
-                "color": ("STRING", {"default": "#FFFFFF"})
+                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, })
             } 
         }
     
@@ -262,19 +188,19 @@ as a simple light source.  The color can be
 specified in RGB or hex format.  
 """
 
-    def execute(self, light_position, multiplier, color, width, height):
-        if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
-            color_hex = color.lstrip('#')
-            color_rgb =tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
-        else:
-            color_rgb = tuple(int(i) for i in color.split(','))
-        
+    def execute(self, light_position, multiplier, start_color, end_color, width, height):
+        def toRgb(color):
+            if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
+                color_rgb =tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+            else:  # e.g. "255,255,255"
+                color_rgb = tuple(int(i) for i in color.split(','))
+            return color_rgb
         lightPosition = LightPosition(light_position)
-        image = generate_gradient_image(width, height, color_rgb, multiplier, lightPosition)
+        start_color_rgb = toRgb(start_color)
+        end_color_rgb = toRgb(end_color)
+        image = generate_gradient_image(width, height, start_color_rgb, end_color_rgb, multiplier, lightPosition)
         
-        # Convert a numpy array to a tensor and scale its values from 0-255 to 0-1
         image = image.astype(np.float32) / 255.0
-        image = image * multiplier
         image = torch.from_numpy(image)[None,]
         return (image,)
 
@@ -344,10 +270,8 @@ left, right, bottom, top
             normal = normal + np.stack([z, z, 1 - z], axis=2)
             normal = torch.from_numpy(normal).unsqueeze(0)
 
-        print(normal.min(), normal.max())
         normal = (normal + 1.0) / 2.0
         normal = torch.clamp(normal, 0, 1)
-        print(normal.min(), normal.max())
    
         return (normal,)
         
