@@ -2,9 +2,12 @@ import torch
 import folder_paths
 import os
 import types
+import numpy as np
 from comfy.utils import load_torch_file
 from .utils.convert_unet import convert_iclight_unet
 from .utils.patches import calculate_weight_adjust_channel
+from .utils.image import generate_gradient_image, LightPosition
+from nodes import MAX_RESOLUTION
 from comfy.model_patcher import ModelPatcher
 
 class LoadAndApplyICLightUnet:
@@ -147,8 +150,8 @@ To use the "opt_background" input, you also need to use the
             concat_latent = samples_1
         print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
 
-        out_latent = {}
-        out_latent["samples"] = torch.zeros_like(concat_latent)
+        out_latent = torch.zeros_like(samples_1)
+        print(out_latent.shape)
 
         out = []
         for conditioning in [positive, negative]:
@@ -159,72 +162,7 @@ To use the "opt_background" input, you also need to use the
                 n = [t[0], d]
                 c.append(n)
             out.append(c)
-        return (out[0], out[1], negative, out_latent)
-    
-### Light Source
-import numpy as np
-from enum import Enum
-from nodes import MAX_RESOLUTION
-
-class LightPosition(Enum):
-    LEFT = "Left Light"
-    RIGHT = "Right Light"
-    TOP = "Top Light"
-    BOTTOM = "Bottom Light"
-    TOP_LEFT = "Top Left Light"
-    TOP_RIGHT = "Top Right Light"
-    BOTTOM_LEFT = "Bottom Left Light"
-    BOTTOM_RIGHT = "Bottom Right Light"
-
-def generate_gradient_image(width:int, height:int, lightPosition:LightPosition):
-    """
-    Generate a gradient image with a light source effect.
-    
-    Parameters:
-    width (int): Width of the image.
-    height (int): Height of the image.
-    lightPosition (str): Position of the light source. 
-                     It can be 'Left Light', 'Right Light', 'Top Light', 'Bottom Light',
-                     'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.
-    
-    Returns:
-    np.array: 2D gradient image array.
-    """
-    if lightPosition == LightPosition.LEFT:
-        gradient = np.tile(np.linspace(255, 0, width), (height, 1))
-    elif lightPosition == LightPosition.RIGHT:
-        gradient = np.tile(np.linspace(0, 255, width), (height, 1))
-    elif lightPosition == LightPosition.TOP:
-        gradient = np.tile(np.linspace(255, 0, height), (width, 1)).T
-    elif lightPosition == LightPosition.BOTTOM:
-        gradient = np.tile(np.linspace(0, 255, height), (width, 1)).T
-    elif lightPosition == LightPosition.TOP_LEFT:
-        x = np.linspace(255, 0, width)
-        y = np.linspace(255, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.TOP_RIGHT:
-        x = np.linspace(0, 255, width)
-        y = np.linspace(255, 0, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.BOTTOM_LEFT:
-        x = np.linspace(255, 0, width)
-        y = np.linspace(0, 255, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    elif lightPosition == LightPosition.BOTTOM_RIGHT:
-        x = np.linspace(0, 255, width)
-        y = np.linspace(0, 255, height)
-        x_mesh, y_mesh = np.meshgrid(x, y)
-        gradient = (x_mesh + y_mesh) / 2
-    else:
-        raise ValueError("Unsupported position. Choose from 'Left Light', 'Right Light', 'Top Light', 'Bottom Light','Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.")
-    
-    gradient = np.stack((gradient,) * 3, axis=-1).astype(np.uint8)
-
-    return gradient
-
+        return (out[0], out[1], {"samples": out_latent})
 
 class LightSource:
     @classmethod
@@ -234,7 +172,7 @@ class LightSource:
                 "light_position": (["Left Light", "Right Light", "Top Light", "Bottom Light",'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'],),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
                 "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "multiplier": ("FLOAT", { "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, }),
+                "multiplier": ("FLOAT", { "default": 1.0, "min": 0.0, "max": 100.0, "step": 0.01, }),
                 "color": ("STRING", {"default": "#FFFFFF"})
             } 
         }
@@ -243,7 +181,11 @@ class LightSource:
     RETURN_NAMES = ("IMAGE",)
     FUNCTION = "execute"
     CATEGORY = "IC-Light"
-    DESCRIPTION = """Simple Light Source"""
+    DESCRIPTION = """
+Generates a gradient image that can be used  
+as a simple light source.  The color can be  
+specified in RGB or hex format.  
+"""
 
     def execute(self, width, height, light_position, multiplier, color):
         if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
@@ -255,21 +197,95 @@ class LightSource:
         
         lightPosition = LightPosition(light_position)
         image = generate_gradient_image(width, height, lightPosition)
-        image = image * multiplier
         image = image * [r / 255.0, g / 255.0, b / 255.0]
         # Convert a numpy array to a tensor and scale its values from 0-255 to 0-1
         image = image.astype(np.float32) / 255.0
+        image = image * multiplier
         image = torch.from_numpy(image)[None,]
         return (image,)
 
+class CalculateNormalsFromImages:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "sigma": ("FLOAT", { "default": 10.0, "min": 0.01, "max": 100.0, "step": 0.01, }),
+                "center_input_range": ("BOOLEAN", { "default": False, }),
+            },
+            "optional": {
+                "mask": ("MASK",),
+            }
+        }
     
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("normal", )
+    FUNCTION = "execute"
+    CATEGORY = "IC-Light"
+    DESCRIPTION = """
+Calculates normal map from different directional exposures.  
+Takes in 4 images as a batch:  
+left, right, bottom, top  
+
+"""
+
+    def execute(self, images, sigma, center_input_range, mask=None):
+        print(images.min(), images.max())
+        if center_input_range:
+            images = images * 0.5 + 0.5
+        images_np = images.numpy().astype(np.float32)
+        left = images_np[0]
+        right = images_np[1]
+        bottom = images_np[2]
+        top = images_np[3]
+
+        ambient = (left + right + bottom + top) / 4.0
+        h, w, _ = ambient.shape
+       
+        def safa_divide(a, b):
+            e = 1e-5
+            return ((a + e) / (b + e)) - 1.0
+
+        left = safa_divide(left, ambient)
+        right = safa_divide(right, ambient)
+        bottom = safa_divide(bottom, ambient)
+        top = safa_divide(top, ambient)
+
+        u = (right - left) * 0.5
+        v = (top - bottom) * 0.5
+
+        u = np.mean(u, axis=2)
+        v = np.mean(v, axis=2)
+        h = (1.0 - u ** 2.0 - v ** 2.0).clip(0, 1e5) ** (0.5 * sigma)
+        z = np.zeros_like(h)
+
+        normal = np.stack([u, v, h], axis=2)
+        normal /= np.sum(normal ** 2.0, axis=2, keepdims=True) ** 0.5
+        if mask is not None:
+            matting = mask.numpy().astype(np.float32)
+            matting = matting[..., np.newaxis] 
+            normal = normal * matting + np.stack([z, z, 1 - z], axis=2) * (1 - matting)
+            normal = torch.from_numpy(normal)
+        else:
+            normal = normal + np.stack([z, z, 1 - z], axis=2)
+            normal = torch.from_numpy(normal).unsqueeze(0)
+
+        print(normal.min(), normal.max())
+        normal = (normal + 1.0) / 2.0
+        normal = torch.clamp(normal, 0, 1)
+        print(normal.min(), normal.max())
+   
+        return (normal,)
+        
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
     "ICLightConditioning": ICLightConditioning,
-    "LightSource": LightSource
+    "LightSource": LightSource,
+    "CalculateNormalsFromImages": CalculateNormalsFromImages
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
     "ICLightConditioning": "IC-Light Conditioning",
-    "LightSource": "Simple Light Source"
+    "LightSource": "Simple Light Source",
+    "CalculateNormalsFromImages": "Calculate Normals From Images"
 }
