@@ -47,7 +47,7 @@ Used with ICLightConditioning -node
             new_keys_dict = convert_iclight_unet(iclight_state_dict)
 
             print("LoadAndApplyICLightUnet: Attempting to add patches with IC-Light Unet weights")
-            model_clone.unpatch_model()
+            #model_clone.unpatch_model()
             try:
                 for key in new_keys_dict:
                     model_clone.add_patches({key: (new_keys_dict[key],)}, 1.0, 1.0)
