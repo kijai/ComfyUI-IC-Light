@@ -24,11 +24,6 @@ class LoadAndApplyICLightUnet:
   
 Bit hacky (but currently working) way to load the diffusers IC-Light models available here:  
 https://huggingface.co/lllyasviel/ic-light/tree/main  
-
-Currently this **permanently** changes the in_channels of the loaded model, 
-to unload this you would need to disable this node and change checkpoint.  
-For the same reason this node needs to be the **first** model node after  
-checkpoint loader.  
   
 Used with ICLightConditioning -node  
 """
