@@ -41,7 +41,7 @@ def calculate_weight_adjust_channel(func):
                 ):
                     new_shape = [max(n, m) for n, m in zip(weight.shape, w1.shape)]
                     print(
-                        f"Merged with {key} channel changed from {weight.shape} to {new_shape}"
+                        f"IC-Light: Merged with {key} channel changed from {weight.shape} to {new_shape}"
                     )
                     new_diff = alpha * comfy.model_management.cast_to_device(
                         w1, weight.device, weight.dtype
