@@ -176,13 +176,15 @@ class LightPosition(Enum):
     BOTTOM_LEFT = "Bottom Left Light"
     BOTTOM_RIGHT = "Bottom Right Light"
 
-def generate_gradient_image(width:int, height:int, lightPosition:LightPosition):
+def generate_gradient_image(width:int, height:int, color_rgb: tuple, multiplier: float, lightPosition:LightPosition):
     """
     Generate a gradient image with a light source effect.
     
     Parameters:
     width (int): Width of the image.
     height (int): Height of the image.
+    color_rgb: Color RGB of the image.
+    multiplier: weight of light.
     lightPosition (str): Position of the light source. 
                      It can be 'Left Light', 'Right Light', 'Top Light', 'Bottom Light',
                      'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.
@@ -191,37 +193,42 @@ def generate_gradient_image(width:int, height:int, lightPosition:LightPosition):
     np.array: 2D gradient image array.
     """
     if lightPosition == LightPosition.LEFT:
-        gradient = np.tile(np.linspace(255, 0, width), (height, 1))
+        gradient = np.tile(np.linspace(1, 0, width), (height, 1))
     elif lightPosition == LightPosition.RIGHT:
-        gradient = np.tile(np.linspace(0, 255, width), (height, 1))
+        gradient = np.tile(np.linspace(0, 1, width), (height, 1))
     elif lightPosition == LightPosition.TOP:
-        gradient = np.tile(np.linspace(255, 0, height), (width, 1)).T
+        gradient = np.tile(np.linspace(1, 0, height), (width, 1)).T
     elif lightPosition == LightPosition.BOTTOM:
-        gradient = np.tile(np.linspace(0, 255, height), (width, 1)).T
+        gradient = np.tile(np.linspace(0, 1, height), (width, 1)).T
     elif lightPosition == LightPosition.TOP_LEFT:
-        x = np.linspace(255, 0, width)
-        y = np.linspace(255, 0, height)
+        x = np.linspace(1, 0, width)
+        y = np.linspace(1, 0, height)
         x_mesh, y_mesh = np.meshgrid(x, y)
         gradient = (x_mesh + y_mesh) / 2
     elif lightPosition == LightPosition.TOP_RIGHT:
-        x = np.linspace(0, 255, width)
-        y = np.linspace(255, 0, height)
+        x = np.linspace(0, 1, width)
+        y = np.linspace(1, 0, height)
         x_mesh, y_mesh = np.meshgrid(x, y)
         gradient = (x_mesh + y_mesh) / 2
     elif lightPosition == LightPosition.BOTTOM_LEFT:
-        x = np.linspace(255, 0, width)
-        y = np.linspace(0, 255, height)
+        x = np.linspace(1, 0, width)
+        y = np.linspace(0, 1, height)
         x_mesh, y_mesh = np.meshgrid(x, y)
         gradient = (x_mesh + y_mesh) / 2
     elif lightPosition == LightPosition.BOTTOM_RIGHT:
-        x = np.linspace(0, 255, width)
-        y = np.linspace(0, 255, height)
+        x = np.linspace(0, 1, width)
+        y = np.linspace(0, 1, height)
         x_mesh, y_mesh = np.meshgrid(x, y)
         gradient = (x_mesh + y_mesh) / 2
     else:
         raise ValueError("Unsupported position. Choose from 'Left Light', 'Right Light', 'Top Light', 'Bottom Light','Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'.")
     
-    gradient = np.stack((gradient,) * 3, axis=-1).astype(np.uint8)
+    gradient = gradient * multiplier
+    gradient_x = gradient * color_rgb[0]
+    gradient_y = gradient * color_rgb[1]
+    gradient_z = gradient * color_rgb[2]
+    gradient = [gradient_x, gradient_y, gradient_z]
+    gradient = np.stack(gradient, axis=-1).astype(np.uint8)
 
     return gradient
 
@@ -232,6 +239,8 @@ class LightSource:
         return {
             "required": {
                 "light_position": (["Left Light", "Right Light", "Top Light", "Bottom Light",'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'],),
+                "multiplier": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.001}),
+                "color": ("STRING", {"default": "#ffffff"}),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
                 "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
             } 
@@ -243,9 +252,11 @@ class LightSource:
     CATEGORY = "IC-Light"
     DESCRIPTION = """Simple Light Source"""
 
-    def execute(self, width, height, light_position):
+    def execute(self, light_position, multiplier, color, width, height):
+        color_hex = color.lstrip('#')
+        color_rgb =tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
         lightPosition = LightPosition(light_position)
-        image = generate_gradient_image(width, height, lightPosition)
+        image = generate_gradient_image(width, height, color_rgb, multiplier, lightPosition)
         # Convert a numpy array to a tensor and scale its values from 0-255 to 0-1
         image = image.astype(np.float32) / 255.0
         image = torch.from_numpy(image)[None,]
