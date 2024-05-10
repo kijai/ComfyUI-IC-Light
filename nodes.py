@@ -234,6 +234,8 @@ class LightSource:
                 "light_position": (["Left Light", "Right Light", "Top Light", "Bottom Light",'Top Left Light', 'Top Right Light', 'Bottom Left Light', 'Bottom Right Light'],),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
                 "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
+                "multiplier": ("FLOAT", { "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01, }),
+                "color": ("STRING", {"default": "#FFFFFF"})
             } 
         }
     
@@ -243,9 +245,18 @@ class LightSource:
     CATEGORY = "IC-Light"
     DESCRIPTION = """Simple Light Source"""
 
-    def execute(self, width, height, light_position):
+    def execute(self, width, height, light_position, multiplier, color):
+        if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+        else:
+            r, g, b = map(int, color.split(','))
+        
         lightPosition = LightPosition(light_position)
         image = generate_gradient_image(width, height, lightPosition)
+        image = image * multiplier
+        image = image * [r / 255.0, g / 255.0, b / 255.0]
         # Convert a numpy array to a tensor and scale its values from 0-255 to 0-1
         image = image.astype(np.float32) / 255.0
         image = torch.from_numpy(image)[None,]
