@@ -3,6 +3,7 @@ import folder_paths
 import os
 import types
 import numpy as np
+import torch.nn.functional as F
 from comfy.utils import load_torch_file
 from .utils.convert_unet import convert_iclight_unet
 from .utils.patches import calculate_weight_adjust_channel
@@ -79,7 +80,10 @@ Used with ICLightConditioning -node
             #     print(f"LoadAndApplyICLightUnet: New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
 
             #Patch ComfyUI's LoRA weight application to accept multi-channel inputs. Thanks @huchenlei
-            ModelPatcher.calculate_weight = calculate_weight_adjust_channel(ModelPatcher.calculate_weight)   
+            try:
+                ModelPatcher.calculate_weight = calculate_weight_adjust_channel(ModelPatcher.calculate_weight)
+            except:
+                raise Exception("IC-Light: Could not patch calculate_weight")
             # Mimic the existing IP2P class to enable extra_conds
             def bound_extra_conds(self, **kwargs):
                  return ICLight.extra_conds(self, **kwargs)
@@ -144,6 +148,18 @@ To use the "opt_background" input, you also need to use the
 
         if opt_background is not None:
             samples_2 = opt_background["samples"]
+            print(samples_2.shape)
+
+            repeats_1 = samples_2.size(0) // samples_1.size(0)
+            repeats_2 = samples_1.size(0) // samples_2.size(0)
+            if samples_1.shape[1:] != samples_2.shape[1:]:
+                samples_2 = comfy.utils.common_upscale(samples_2, samples_1.shape[-1], samples_1.shape[-2], "bilinear", "disabled")
+
+            # Repeat the tensors to match the larger batch size
+            if repeats_1 > 1:
+                samples_1 = samples_1.repeat(repeats_1, 1, 1, 1)
+            if repeats_2 > 1:
+                samples_2 = samples_2.repeat(repeats_2, 1, 1, 1)
 
             concat_latent = torch.cat((samples_1, samples_2), dim=1)
         else:
@@ -230,9 +246,14 @@ left, right, bottom, top
 """
 
     def execute(self, images, sigma, center_input_range, mask=None):
-        print(images.min(), images.max())
         if center_input_range:
             images = images * 0.5 + 0.5
+        if mask is not None:         
+            if mask.shape != images[0].shape[-1]:
+                mask = mask.unsqueeze(0)
+                mask = F.interpolate(mask, size=(images.shape[1], images.shape[2]), mode="bilinear")
+                mask = mask.squeeze(0)
+
         images_np = images.numpy().astype(np.float32)
         left = images_np[0]
         right = images_np[1]
@@ -262,15 +283,17 @@ left, right, bottom, top
         normal = np.stack([u, v, h], axis=2)
         normal /= np.sum(normal ** 2.0, axis=2, keepdims=True) ** 0.5
         if mask is not None:
+            mask = mask.squeeze(0)
             matting = mask.numpy().astype(np.float32)
-            matting = matting[..., np.newaxis] 
-            normal = normal * matting + np.stack([z, z, 1 - z], axis=2) * (1 - matting)
+            matting = matting[..., np.newaxis]   
+            normal = normal * matting + np.stack([z, z, 1 - z], axis=2) 
             normal = torch.from_numpy(normal)
+            normal = normal.unsqueeze(0)
         else:
             normal = normal + np.stack([z, z, 1 - z], axis=2)
             normal = torch.from_numpy(normal).unsqueeze(0)
-
-        normal = (normal + 1.0) / 2.0
+        
+        normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
         normal = torch.clamp(normal, 0, 1)
    
         return (normal,)
