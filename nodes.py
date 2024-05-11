@@ -274,16 +274,64 @@ left, right, bottom, top
         normal = torch.clamp(normal, 0, 1)
    
         return (normal,)
-        
+
+class LoadHDRImage:
+    @classmethod
+    def INPUT_TYPES(s):
+        input_dir = folder_paths.get_input_directory()
+        files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+        return {"required":
+                    {"image": (sorted(files), {"image_upload": False}),
+                     "exposures": ("STRING", {"default": "-2,-1,0,1,2"}),
+                     },
+                }
+
+    CATEGORY = "image"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    FUNCTION = "loadhdrimage"
+    def loadhdrimage(self, image, exposures):
+        import cv2
+        image_path = folder_paths.get_annotated_filepath(image)
+        # Load the HDR image
+        hdr_image = cv2.imread(image_path, cv2.IMREAD_ANYDEPTH)
+
+        exposures = list(map(int, exposures.split(",")))
+        if not isinstance(exposures, list):
+            exposures = [exposures]  # Example exposure values
+        ldr_images_tensors = []
+
+        for exposure in exposures:
+            # Scale pixel values to simulate different exposures
+            ldr_image = np.clip(hdr_image * (2**exposure), 0, 1)
+            # Convert to 8-bit image (LDR) by scaling to 255
+            ldr_image_8bit = np.uint8(ldr_image * 255)
+            # Convert BGR to RGB
+            ldr_image_8bit = cv2.cvtColor(ldr_image_8bit, cv2.COLOR_BGR2RGB)
+            # Convert the LDR image to a torch tensor
+            tensor_image = torch.from_numpy(ldr_image_8bit).float()
+            # Normalize the tensor to the range [0, 1]
+            tensor_image = tensor_image / 255.0
+            # Change the tensor shape to (C, H, W)
+            tensor_image = tensor_image.permute(2, 0, 1)
+            # Add the tensor to the list
+            ldr_images_tensors.append(tensor_image)
+
+        batch_tensors = torch.stack(ldr_images_tensors)
+        batch_tensors = batch_tensors.permute(0, 2, 3, 1)
+
+        return batch_tensors,
+            
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
     "ICLightConditioning": ICLightConditioning,
     "LightSource": LightSource,
-    "CalculateNormalsFromImages": CalculateNormalsFromImages
+    "CalculateNormalsFromImages": CalculateNormalsFromImages,
+    "LoadHDRImage": LoadHDRImage
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
     "ICLightConditioning": "IC-Light Conditioning",
     "LightSource": "Simple Light Source",
-    "CalculateNormalsFromImages": "Calculate Normals From Images"
+    "CalculateNormalsFromImages": "Calculate Normals From Images",
+    "LoadHDRImage": "Load HDR Image"
 }
