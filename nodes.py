@@ -261,7 +261,7 @@ left, right, bottom, top
         if mask is not None:
             mask = mask.squeeze(0)
             matting = mask.numpy().astype(np.float32)
-            matting = matting[..., np.newaxis]   
+            matting = matting[..., np.newaxis]
             normal = normal * matting + np.stack([z, z, 1 - z], axis=2) 
             normal = torch.from_numpy(normal)
             normal = normal.unsqueeze(0)
@@ -271,12 +271,11 @@ left, right, bottom, top
         
         #normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
         normal = (normal - normal.min()) / ((normal.max() - normal.min()))
-        normal = torch.clamp(normal, 0, 1)
         
         divided = np.stack([left, right, bottom, top])
         divided = torch.from_numpy(divided)
         divided = (divided - divided.min()) / ((divided.max() - divided.min()))
-        divided = torch.clamp(divided, 0, 1)
+        divided = torch.max(divided, dim=3, keepdim=True)[0].repeat(1, 1, 1, 3)
    
         return (normal, divided, )
 
