@@ -41,43 +41,20 @@ Used with ICLightConditioning -node
             print("LoadAndApplyICLightUnet: Loading IC-Light Unet weights")
             model_clone = model.clone()
 
-            iclight_state_dict = load_torch_file(model_full_path)             
-            # for key, value in iclight_state_dict.items():
-            #     if key.startswith('conv_in.weight'):
-            #         in_channels = value.shape[1]
-            #         break
-
-            # Add weights as patches
-            new_keys_dict = convert_iclight_unet(iclight_state_dict)
-
+            iclight_state_dict = load_torch_file(model_full_path)
+            
             print("LoadAndApplyICLightUnet: Attempting to add patches with IC-Light Unet weights")
-            #model_clone.unpatch_model()
-            try:
-                for key in new_keys_dict:
-                    model_clone.add_patches({key: (new_keys_dict[key],)}, 1.0, 1.0)
+            try:          
+                if 'conv_in.weight' in iclight_state_dict:
+                    iclight_state_dict = convert_iclight_unet(iclight_state_dict)
+                    for key in iclight_state_dict:
+                        model_clone.add_patches({key: (iclight_state_dict[key],)}, 1.0, 1.0)
+                else:
+                    for key in iclight_state_dict:
+                        model_clone.add_patches({"diffusion_model." + key: (iclight_state_dict[key],)}, 1.0, 1.0)
             except:
                 raise Exception("Could not patch model")
             print("LoadAndApplyICLightUnet: Added LoadICLightUnet patches")
-
-            # # Create a new Conv2d layer with 8 or 12 input channels   
-            # original_conv_layer = model_clone.model.diffusion_model.input_blocks[0][0]
-
-            # print(f"LoadAndApplyICLightUnet: Input channels in currently loaded model: {original_conv_layer.in_channels}")
-          
-            # print("LoadAndApplyICLightUnet: Settings in_channels to: ", in_channels)
-            
-            # if model_clone.model.diffusion_model.input_blocks[0][0].in_channels != in_channels:
-            #     num_channels_to_copy = min(in_channels, original_conv_layer.in_channels)
-            #     new_conv_layer = torch.nn.Conv2d(in_channels, original_conv_layer.out_channels, kernel_size=original_conv_layer.kernel_size, stride=original_conv_layer.stride, padding=original_conv_layer.padding)
-            #     new_conv_layer.weight.zero_()
-            #     new_conv_layer.weight[:, :num_channels_to_copy, :, :].copy_(original_conv_layer.weight[:, :num_channels_to_copy, :, :])
-            #     new_conv_layer.bias = original_conv_layer.bias
-            #     new_conv_layer = new_conv_layer.to(model_clone.model.diffusion_model.dtype)
-            #     original_conv_layer.conv_in = new_conv_layer
-            #     # Replace the old layer with the new one
-            #     model_clone.model.diffusion_model.input_blocks[0][0] = new_conv_layer
-            #     # Verify the change
-            #     print(f"LoadAndApplyICLightUnet: New number of input channels: {model_clone.model.diffusion_model.input_blocks[0][0].in_channels}")
 
             #Patch ComfyUI's LoRA weight application to accept multi-channel inputs. Thanks @huchenlei
             try:
@@ -167,7 +144,6 @@ To use the "opt_background" input, you also need to use the
         print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
 
         out_latent = torch.zeros_like(samples_1)
-        print(out_latent.shape)
 
         out = []
         for conditioning in [positive, negative]:
