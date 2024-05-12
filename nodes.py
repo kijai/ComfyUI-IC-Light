@@ -269,10 +269,13 @@ left, right, bottom, top
             normal = normal + np.stack([z, z, 1 - z], axis=2)
             normal = torch.from_numpy(normal).unsqueeze(0)
         
-        normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
+        #normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
+        normal = (normal - normal.min()) / ((normal.max() - normal.min()))
         normal = torch.clamp(normal, 0, 1)
+        
         divided = np.stack([left, right, bottom, top])
         divided = torch.from_numpy(divided)
+        divided = (divided - divided.min()) / ((divided.max() - divided.min()))
         divided = torch.clamp(divided, 0, 1)
    
         return (normal, divided, )
