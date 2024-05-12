@@ -273,7 +273,6 @@ left, right, bottom, top
         normal = torch.clamp(normal, 0, 1)
         divided = np.stack([left, right, bottom, top])
         divided = torch.from_numpy(divided)
-        print(divided.shape)
         divided = torch.clamp(divided, 0, 1)
    
         return (normal, divided, )
