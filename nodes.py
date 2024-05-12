@@ -239,14 +239,14 @@ left, right, bottom, top
         ambient = (left + right + bottom + top) / 4.0
         h, w, _ = ambient.shape
        
-        def safa_divide(a, b):
+        def safe_divide(a, b):
             e = 1e-5
             return ((a + e) / (b + e)) - 1.0
 
-        left = safa_divide(left, ambient)
-        right = safa_divide(right, ambient)
-        bottom = safa_divide(bottom, ambient)
-        top = safa_divide(top, ambient)
+        left = safe_divide(left, ambient)
+        right = safe_divide(right, ambient)
+        bottom = safe_divide(bottom, ambient)
+        top = safe_divide(top, ambient)
 
         u = (right - left) * 0.5
         v = (top - bottom) * 0.5
