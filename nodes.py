@@ -210,8 +210,8 @@ class CalculateNormalsFromImages:
             }
         }
     
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("normal", )
+    RETURN_TYPES = ("IMAGE", "IMAGE",)
+    RETURN_NAMES = ("normal", "divided",)
     FUNCTION = "execute"
     CATEGORY = "IC-Light"
     DESCRIPTION = """
@@ -271,8 +271,12 @@ left, right, bottom, top
         
         normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
         normal = torch.clamp(normal, 0, 1)
+        divided = np.stack([left, right, bottom, top])
+        divided = torch.from_numpy(divided)
+        print(divided.shape)
+        divided = torch.clamp(divided, 0, 1)
    
-        return (normal,)
+        return (normal, divided, )
 
 class LoadHDRImage:
     @classmethod
