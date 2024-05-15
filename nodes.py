@@ -26,13 +26,17 @@ class LoadAndApplyICLightUnet:
     CATEGORY = "IC-Light"
     DESCRIPTION = """
   
-Bit hacky (but currently working) way to load the diffusers IC-Light models available here:  
+Loads and applies the diffusers SD1.5 IC-Light models available here:  
 https://huggingface.co/lllyasviel/ic-light/tree/main  
   
 Used with ICLightConditioning -node  
 """
 
     def load(self, model, model_path):
+        type_str = str(type(model.model.model_config).__name__)
+        if "SD15" not in type_str:
+            raise Exception(f"Attempted to load {type_str} model, IC-Light is only compatible with SD 1.5 models.")
+
         print("LoadAndApplyICLightUnet: Checking IC-Light Unet path")
         model_full_path = folder_paths.get_full_path("unet", model_path)
         if not os.path.exists(model_full_path):
