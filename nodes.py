@@ -51,11 +51,15 @@ Used with ICLightConditioning -node
             try:          
                 if 'conv_in.weight' in iclight_state_dict:
                     iclight_state_dict = convert_iclight_unet(iclight_state_dict)
+                    in_channels = iclight_state_dict["diffusion_model.input_blocks.0.0.weight"].shape[1]
                     for key in iclight_state_dict:
                         model_clone.add_patches({key: (iclight_state_dict[key],)}, 1.0, 1.0)
                 else:
                     for key in iclight_state_dict:
                         model_clone.add_patches({"diffusion_model." + key: (iclight_state_dict[key],)}, 1.0, 1.0)
+
+                    in_channels = iclight_state_dict["input_blocks.0.0.weight"].shape[1]
+
             except:
                 raise Exception("Could not patch model")
             print("LoadAndApplyICLightUnet: Added LoadICLightUnet patches")
@@ -70,6 +74,9 @@ Used with ICLightConditioning -node
                  return ICLight.extra_conds(self, **kwargs)
             new_extra_conds = types.MethodType(bound_extra_conds, model_clone.model)
             model_clone.add_object_patch("extra_conds", new_extra_conds)
+            
+
+            model_clone.model.model_config.unet_config["in_channels"] = in_channels        
 
             return (model_clone, )
 
@@ -82,6 +89,12 @@ class ICLight:
         noise = kwargs.get("noise", None)
         device = kwargs["device"]
 
+        model_in_channels = self.model_config.unet_config['in_channels']
+        input_channels = image.shape[1] + 4
+
+        if model_in_channels != input_channels:
+            raise Exception(f"Input channels {input_channels} does not match model in_channels {model_in_channels}, 'opt_background' latent input should be used with the IC-Light 'fbc' model, and only with it")
+        
         if image is None:
             image = torch.zeros_like(noise)
 
@@ -145,7 +158,7 @@ To use the "opt_background" input, you also need to use the
             concat_latent = torch.cat((samples_1, samples_2), dim=1)
         else:
             concat_latent = samples_1
-        print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
+        #print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
 
         out_latent = torch.zeros_like(samples_1)
 
@@ -228,12 +241,12 @@ left, right, bottom, top
     def execute(self, images, sigma, center_input_range, mask=None):
         if center_input_range:
             images = images * 0.5 + 0.5
-        if mask is not None:         
-            if mask.shape != images[0].shape[-1]:
+        if mask is not None:
+            if mask.shape[-2:] != images[0].shape[:-1]:
                 mask = mask.unsqueeze(0)
                 mask = F.interpolate(mask, size=(images.shape[1], images.shape[2]), mode="bilinear")
                 mask = mask.squeeze(0)
-
+        
         images_np = images.numpy().astype(np.float32)
         left = images_np[0]
         right = images_np[1]
