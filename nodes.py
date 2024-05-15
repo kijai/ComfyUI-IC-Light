@@ -341,18 +341,63 @@ class LoadHDRImage:
         batch_tensors = batch_tensors.permute(0, 2, 3, 1)
 
         return batch_tensors,
+
+class BgGreyScaler:
+    """Class to scale image bacground regions to grey based on provided masks."""
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "mask": ("MASK",),
+                "multiplier": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.001}),
+            }
+        }
+
+    CATEGORY = "gaffer"
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "apply"
+
+    def apply(self, image: torch.Tensor, mask: torch.Tensor, multiplier):
+        """
+        Applies grey scaling to image regions as indicated by the mask.
+
+        Args:
+            image: torch.Tensor: The input image tensor.
+            mask: torch.Tensor: A mask tensor where 1 indicates areas to be converted to grey.
+            multiplier: float: A value to control the intensity of the grey conversion.
+        Returns:
+            tuple: A tuple containing the image with masked regions turned grey.
+        """
+        # Validate inputs
+        if not isinstance(image, torch.Tensor) or not isinstance(mask, torch.Tensor):
+            raise ValueError("image and mask must be torch.Tensor types.")
+        if image.ndim != 4 or mask.ndim not in [3, 4]:
+            raise ValueError("image must be a 4D tensor, and mask must be a 3D or 4D tensor.")
+
+        # Adjust mask dimensions if necessary
+        if mask.ndim == 3:
+            # [B, H, W] => [B, H, W, C=1]
+            mask = mask.unsqueeze(-1)
+
+        grey_value = 0.5 * multiplier
+        image = image * mask + (1 - mask) * grey_value
+
+        return (image,)
             
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
     "ICLightConditioning": ICLightConditioning,
     "LightSource": LightSource,
     "CalculateNormalsFromImages": CalculateNormalsFromImages,
-    "LoadHDRImage": LoadHDRImage
+    "LoadHDRImage": LoadHDRImage,
+    "BgGreyScaler": BgGreyScaler
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
     "ICLightConditioning": "IC-Light Conditioning",
     "LightSource": "Simple Light Source",
     "CalculateNormalsFromImages": "Calculate Normals From Images",
-    "LoadHDRImage": "Load HDR Image"
+    "LoadHDRImage": "Load HDR Image",
+    "BgGreyScaler": "Background Grey Scaler"
 }
