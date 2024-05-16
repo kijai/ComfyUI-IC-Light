@@ -142,7 +142,6 @@ To use the "opt_background" input, you also need to use the
 
         if opt_background is not None:
             samples_2 = opt_background["samples"]
-            print(samples_2.shape)
 
             repeats_1 = samples_2.size(0) // samples_1.size(0)
             repeats_2 = samples_1.size(0) // samples_2.size(0)
@@ -158,7 +157,6 @@ To use the "opt_background" input, you also need to use the
             concat_latent = torch.cat((samples_1, samples_2), dim=1)
         else:
             concat_latent = samples_1
-        #print("ICLightConditioning: concat_latent shape: ", concat_latent.shape)
 
         out_latent = torch.zeros_like(samples_1)
 
@@ -310,6 +308,11 @@ class LoadHDRImage:
     CATEGORY = "image"
     RETURN_TYPES = ("IMAGE", "MASK")
     FUNCTION = "loadhdrimage"
+    DESCRIPTION = """
+Loads a .hdr image from the input directory.  
+Output is a batch of LDR images with the selected exposures.  
+
+"""
     def loadhdrimage(self, image, exposures):
         import cv2
         image_path = folder_paths.get_annotated_filepath(image)
@@ -342,33 +345,27 @@ class LoadHDRImage:
 
         return batch_tensors,
 
-class BgGreyScaler:
-    """Class to scale image bacground regions to grey based on provided masks."""
+class BackgroundScaler:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "image": ("IMAGE",),
                 "mask": ("MASK",),
-                "multiplier": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.001}),
+                "scale": ("FLOAT", {"default": 0.5, "min": -10.0, "max": 10.0, "step": 0.001}),
+                "invert": ("BOOLEAN", { "default": False, }),
             }
         }
 
     CATEGORY = "gaffer"
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "apply"
+    DESCRIPTION = """
+Sets the masked area color in grayscale range.  
+"""
 
-    def apply(self, image: torch.Tensor, mask: torch.Tensor, multiplier):
-        """
-        Applies grey scaling to image regions as indicated by the mask.
+    def apply(self, image: torch.Tensor, mask: torch.Tensor, scale: float, invert: bool):
 
-        Args:
-            image: torch.Tensor: The input image tensor.
-            mask: torch.Tensor: A mask tensor where 1 indicates areas to be converted to grey.
-            multiplier: float: A value to control the intensity of the grey conversion.
-        Returns:
-            tuple: A tuple containing the image with masked regions turned grey.
-        """
         # Validate inputs
         if not isinstance(image, torch.Tensor) or not isinstance(mask, torch.Tensor):
             raise ValueError("image and mask must be torch.Tensor types.")
@@ -380,10 +377,12 @@ class BgGreyScaler:
             # [B, H, W] => [B, H, W, C=1]
             mask = mask.unsqueeze(-1)
 
-        grey_value = 0.5 * multiplier
-        image = image * mask + (1 - mask) * grey_value
-
-        return (image,)
+        if invert:
+            mask = 1 - mask
+        image_out = image * mask + (1 - mask) * scale
+        image_out = torch.clamp(image_out, 0, 1).cpu().float()
+        
+        return (image_out,)
             
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
@@ -391,7 +390,7 @@ NODE_CLASS_MAPPINGS = {
     "LightSource": LightSource,
     "CalculateNormalsFromImages": CalculateNormalsFromImages,
     "LoadHDRImage": LoadHDRImage,
-    "BgGreyScaler": BgGreyScaler
+    "BackgroundScaler": BackgroundScaler
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
@@ -399,5 +398,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LightSource": "Simple Light Source",
     "CalculateNormalsFromImages": "Calculate Normals From Images",
     "LoadHDRImage": "Load HDR Image",
-    "BgGreyScaler": "Background Grey Scaler"
+    "BackgroundScaler": "Background Scaler"
 }
