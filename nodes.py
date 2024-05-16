@@ -305,7 +305,7 @@ class LoadHDRImage:
                      },
                 }
 
-    CATEGORY = "image"
+    CATEGORY = "IC-Light"
     RETURN_TYPES = ("IMAGE", "MASK")
     FUNCTION = "loadhdrimage"
     DESCRIPTION = """
@@ -357,7 +357,7 @@ class BackgroundScaler:
             }
         }
 
-    CATEGORY = "gaffer"
+    CATEGORY = "IC-Light"
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "apply"
     DESCRIPTION = """
