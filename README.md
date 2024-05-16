@@ -18,6 +18,14 @@ Some of the example workflows require the very latest features in KJNodes:
 
 https://github.com/kijai/ComfyUI-KJNodes
 
+
+
+
+
+https://github.com/kijai/ComfyUI-IC-Light/assets/40791699/c545a84f-3546-430e-b5dd-adce2ff19b6d
+
+
+
 https://github.com/kijai/ComfyUI-IC-Light/assets/40791699/b406ee2b-c9cb-4f9a-9aac-6ab5f753420d
 
 
