@@ -181,8 +181,12 @@ class LightSource:
                 "start_color": ("STRING", {"default": "#FFFFFF"}),
                 "end_color": ("STRING", {"default": "#000000"}),
                 "width": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
-                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, })
-            } 
+                "height": ("INT", { "default": 512, "min": 0, "max": MAX_RESOLUTION, "step": 8, }),
+                },
+            "optional": {
+                "batch_size": ("INT", { "default": 1, "min": 1, "max": 4096, "step": 1, }),
+                "prev_image": ("IMAGE",),
+                } 
         }
     
     RETURN_TYPES = ("IMAGE",)
@@ -195,7 +199,7 @@ as a simple light source.  The color can be
 specified in RGB or hex format.  
 """
 
-    def execute(self, light_position, multiplier, start_color, end_color, width, height):
+    def execute(self, light_position, multiplier, start_color, end_color, width, height, batch_size=1, prev_image=None):
         def toRgb(color):
             if color.startswith('#') and len(color) == 7:  # e.g. "#RRGGBB"
                 color_rgb =tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
@@ -209,6 +213,9 @@ specified in RGB or hex format.
         
         image = image.astype(np.float32) / 255.0
         image = torch.from_numpy(image)[None,]
+        image = image.repeat(batch_size, 1, 1, 1)
+        if prev_image is not None:
+            image = torch.cat((image, prev_image), dim=0)
         return (image,)
 
 class CalculateNormalsFromImages:
@@ -237,6 +244,9 @@ left, right, bottom, top
 """
 
     def execute(self, images, sigma, center_input_range, mask=None):
+        B, H, W, C = images.shape
+        repetitions = B // 4        
+
         if center_input_range:
             images = images * 0.5 + 0.5
         if mask is not None:
@@ -245,54 +255,66 @@ left, right, bottom, top
                 mask = F.interpolate(mask, size=(images.shape[1], images.shape[2]), mode="bilinear")
                 mask = mask.squeeze(0)
         
-        images_np = images.numpy().astype(np.float32)
-        left = images_np[0]
-        right = images_np[1]
-        bottom = images_np[2]
-        top = images_np[3]
 
-        ambient = (left + right + bottom + top) / 4.0
-        h, w, _ = ambient.shape
-       
-        def safe_divide(a, b):
-            e = 1e-5
-            return ((a + e) / (b + e)) - 1.0
-
-        left = safe_divide(left, ambient)
-        right = safe_divide(right, ambient)
-        bottom = safe_divide(bottom, ambient)
-        top = safe_divide(top, ambient)
-
-        u = (right - left) * 0.5
-        v = (top - bottom) * 0.5
-
-        u = np.mean(u, axis=2)
-        v = np.mean(v, axis=2)
-        h = (1.0 - u ** 2.0 - v ** 2.0).clip(0, 1e5) ** (0.5 * sigma)
-        z = np.zeros_like(h)
-
-        normal = np.stack([u, v, h], axis=2)
-        normal /= np.sum(normal ** 2.0, axis=2, keepdims=True) ** 0.5
-        if mask is not None:
-            mask = mask.squeeze(0)
-            matting = mask.numpy().astype(np.float32)
-            matting = matting[..., np.newaxis]
-            normal = normal * matting + np.stack([z, z, 1 - z], axis=2) 
-            normal = torch.from_numpy(normal)
-            normal = normal.unsqueeze(0)
-        else:
-            normal = normal + np.stack([z, z, 1 - z], axis=2)
-            normal = torch.from_numpy(normal).unsqueeze(0)
         
-        #normal = F.normalize(normal * 2 - 1, dim=3) / 2 + 0.5
-        normal = (normal - normal.min()) / ((normal.max() - normal.min()))
+        normal_list = []
+        divided_list = []
+        iteration_counter = 0
+
+        for i in range(0, B, 4):  # Loop over every 4 images
+            index = torch.arange(iteration_counter, B, repetitions)
+            rearranged_images = images[index]
+            images_np = rearranged_images.numpy().astype(np.float32)
+            
+            left = images_np[0]
+            right = images_np[1]
+            bottom = images_np[2]
+            top = images_np[3]
+
+            ambient = (left + right + bottom + top) / 4.0
         
-        divided = np.stack([left, right, bottom, top])
-        divided = torch.from_numpy(divided)
-        divided = (divided - divided.min()) / ((divided.max() - divided.min()))
-        divided = torch.max(divided, dim=3, keepdim=True)[0].repeat(1, 1, 1, 3)
+            def safe_divide(a, b):
+                e = 1e-5
+                return ((a + e) / (b + e)) - 1.0
+
+            left = safe_divide(left, ambient)
+            right = safe_divide(right, ambient)
+            bottom = safe_divide(bottom, ambient)
+            top = safe_divide(top, ambient)
+
+            u = (right - left) * 0.5
+            v = (top - bottom) * 0.5
+
+            u = np.mean(u, axis=2)
+            v = np.mean(v, axis=2)
+            h = (1.0 - u ** 2.0 - v ** 2.0).clip(0, 1e5) ** (0.5 * sigma)
+            z = np.zeros_like(h)
+
+            normal = np.stack([u, v, h], axis=2)
+            normal /= np.sum(normal ** 2.0, axis=2, keepdims=True) ** 0.5
+            if mask is not None:
+                matting = mask[iteration_counter].unsqueeze(0).numpy().astype(np.float32)
+                matting = matting[..., np.newaxis]
+                normal = normal * matting + np.stack([z, z, 1 - z], axis=2) 
+                normal = torch.from_numpy(normal)
+                #normal = normal.unsqueeze(0)
+            else:
+                normal = normal + np.stack([z, z, 1 - z], axis=2)
+                normal = torch.from_numpy(normal).unsqueeze(0)
+
+            iteration_counter += 1 
+            normal = (normal - normal.min()) / ((normal.max() - normal.min()))
+            normal_list.append(normal)
+            divided = np.stack([left, right, bottom, top])
+            divided = torch.from_numpy(divided)
+            divided = (divided - divided.min()) / ((divided.max() - divided.min()))
+            divided = torch.max(divided, dim=3, keepdim=True)[0].repeat(1, 1, 1, 3)
+            divided_list.append(divided)
+
+        normal_out = torch.cat(normal_list, dim=0)
+        divided_out = torch.cat(divided_list, dim=0)
    
-        return (normal, divided, )
+        return (normal_out, divided_out, )
 
 class LoadHDRImage:
     @classmethod
