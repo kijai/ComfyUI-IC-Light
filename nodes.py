@@ -1,4 +1,5 @@
 import torch
+import torchvision.transforms as transforms
 import folder_paths
 import os
 import types
@@ -10,6 +11,7 @@ from .utils.patches import calculate_weight_adjust_channel
 from .utils.image import generate_gradient_image, LightPosition
 from nodes import MAX_RESOLUTION
 from comfy.model_patcher import ModelPatcher
+import model_management
 
 class LoadAndApplyICLightUnet:
     @classmethod
@@ -405,6 +407,93 @@ Sets the masked area color in grayscale range.
         image_out = torch.clamp(image_out, 0, 1).cpu().float()
         
         return (image_out,)
+
+class DetailTransfer:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "target": ("IMAGE", ),
+                "source": ("IMAGE", ),
+                "mode": ([
+                    "add",
+                    "multiply",
+                    "screen",
+                    "overlay",
+                    "soft_light",
+                    "hard_light",
+                    "color_dodge",
+                    "color_burn",
+                    "difference",
+                    "divide",
+                    
+                    ], 
+                    {"default": "add"}
+                    ),
+                "blur_sigma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 100.0, "step": 0.01}),
+                "blend_factor": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01,  "round": 0.01}),
+            },
+            "optional": {
+                "mask": ("MASK", ),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "process"
+    CATEGORY = "IC-Light"
+
+    def process(self, target, source, mode, blur_sigma, blend_factor, mask=None):
+        B, H, W, C = target.shape
+        device = model_management.get_torch_device()
+        target_tensor = target.permute(0, 3, 1, 2).clone().to(device)
+        source_tensor = source.permute(0, 3, 1, 2).clone().to(device)
+
+        if target.shape[1:] != source.shape[1:]:
+            source_tensor = comfy.utils.common_upscale(source_tensor, W, H, "bilinear", "disabled")
+
+        if source.shape[0] < B:
+            source = source[0].unsqueeze(0).repeat(B, 1, 1, 1)
+
+        kernel_size = int(6 * int(blur_sigma) + 1)
+
+        gaussian_blur = transforms.GaussianBlur(kernel_size=(kernel_size, kernel_size), sigma=(blur_sigma, blur_sigma))
+
+        blurred_target = gaussian_blur(target_tensor)
+        blurred_source = gaussian_blur(source_tensor)
+        
+        if mode == "add":
+            tensor_out = (source_tensor - blurred_source) + blurred_target
+        elif mode == "multiply":
+            tensor_out = source_tensor * blurred_target
+        elif mode == "screen":
+            tensor_out = 1 - (1 - source_tensor) * (1 - blurred_target)
+        elif mode == "overlay":
+            tensor_out = torch.where(blurred_target < 0.5, 2 * source_tensor * blurred_target, 1 - 2 * (1 - source_tensor) * (1 - blurred_target))
+        elif mode == "soft_light":
+            tensor_out = (1 - 2 * blurred_target) * source_tensor**2 + 2 * blurred_target * source_tensor
+        elif mode == "hard_light":
+            tensor_out = torch.where(source_tensor < 0.5, 2 * source_tensor * blurred_target, 1 - 2 * (1 - source_tensor) * (1 - blurred_target))
+        elif mode == "difference":
+            tensor_out = torch.abs(blurred_target - source_tensor)
+        elif mode == "exclusion":
+            tensor_out = 0.5 - 2 * (blurred_target - 0.5) * (source_tensor - 0.5)
+        elif mode == "color_dodge":
+            tensor_out = blurred_target / (1 - source_tensor)
+        elif mode == "color_burn":
+            tensor_out = 1 - (1 - blurred_target) / source_tensor
+        elif mode == "divide":
+            tensor_out = (source_tensor / blurred_source) * blurred_target
+        else:
+            tensor_out = source_tensor
+        
+        tensor_out = torch.lerp(target_tensor, tensor_out, blend_factor)
+        if mask is not None:
+            mask = mask.to(device)
+            tensor_out = torch.lerp(target_tensor, tensor_out, mask)
+        tensor_out = torch.clamp(tensor_out, 0, 1)
+        tensor_out = tensor_out.permute(0, 2, 3, 1).cpu().float()
+        return (tensor_out,)
+    
             
 NODE_CLASS_MAPPINGS = {
     "LoadAndApplyICLightUnet": LoadAndApplyICLightUnet,
@@ -412,7 +501,8 @@ NODE_CLASS_MAPPINGS = {
     "LightSource": LightSource,
     "CalculateNormalsFromImages": CalculateNormalsFromImages,
     "LoadHDRImage": LoadHDRImage,
-    "BackgroundScaler": BackgroundScaler
+    "BackgroundScaler": BackgroundScaler,
+    "DetailTransfer": DetailTransfer
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoadAndApplyICLightUnet": "Load And Apply IC-Light",
@@ -420,5 +510,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LightSource": "Simple Light Source",
     "CalculateNormalsFromImages": "Calculate Normals From Images",
     "LoadHDRImage": "Load HDR Image",
-    "BackgroundScaler": "Background Scaler"
+    "BackgroundScaler": "Background Scaler",
+    "DetailTransfer": "Detail Transfer"
 }
