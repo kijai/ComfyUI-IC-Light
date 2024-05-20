@@ -425,13 +425,14 @@ class DetailTransfer:
                     "color_dodge",
                     "color_burn",
                     "difference",
+                    "exclusion",
                     "divide",
                     
                     ], 
                     {"default": "add"}
                     ),
                 "blur_sigma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 100.0, "step": 0.01}),
-                "blend_factor": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.01,  "round": 0.01}),
+                "blend_factor": ("FLOAT", {"default": 1.0, "min": -10.0, "max": 10.0, "step": 0.001,  "round": 0.001}),
             },
             "optional": {
                 "mask": ("MASK", ),
