@@ -217,7 +217,7 @@ specified in RGB or hex format.
         image = torch.from_numpy(image)[None,]
         image = image.repeat(batch_size, 1, 1, 1)
         if prev_image is not None:
-            image = torch.cat((image, prev_image), dim=0)
+            image = torch.cat((prev_image, image), dim=0)
         return (image,)
 
 class CalculateNormalsFromImages:
