@@ -101,7 +101,7 @@ class ICLight:
             image = torch.zeros_like(noise)
 
         if image.shape[1:] != noise.shape[1:]:
-            image = comfy.utils.common_upscale(image.to(device), noise.shape[-1], noise.shape[-2], "bilinear", "center")
+            image = comfy.utils.common_upscale(image.to(device), noise.shape[-1], noise.shape[-2], "lanczos", "center")
 
         image = comfy.utils.resize_to_batch_size(image, noise.shape[0])
 
@@ -148,7 +148,7 @@ To use the "opt_background" input, you also need to use the
             repeats_1 = samples_2.size(0) // samples_1.size(0)
             repeats_2 = samples_1.size(0) // samples_2.size(0)
             if samples_1.shape[1:] != samples_2.shape[1:]:
-                samples_2 = comfy.utils.common_upscale(samples_2, samples_1.shape[-1], samples_1.shape[-2], "bilinear", "disabled")
+                samples_2 = comfy.utils.common_upscale(samples_2, samples_1.shape[-1], samples_1.shape[-2], "lanczos", "disabled")
 
             # Repeat the tensors to match the larger batch size
             if repeats_1 > 1:
@@ -254,7 +254,7 @@ left, right, bottom, top
         if mask is not None:
             if mask.shape[-2:] != images[0].shape[:-1]:
                 mask = mask.unsqueeze(0)
-                mask = F.interpolate(mask, size=(images.shape[1], images.shape[2]), mode="bilinear")
+                mask = F.interpolate(mask, size=(images.shape[1], images.shape[2]), mode="lanczos")
                 mask = mask.squeeze(0)
         
 
