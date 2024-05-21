@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-ic-light"
+description = ""
+version = "1.0.0"
+license = "LICENSE"
+dependencies = ["opencv-python"]
+
+[project.urls]
+Repository = "https://github.com/kijai/ComfyUI-IC-Light"
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-IC-Light"
+Icon = ""
+Models = [{location = "/checkpoints/model.safetensor", model_url = "https://example.com/model.zip"}]
