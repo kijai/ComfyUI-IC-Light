@@ -12,6 +12,7 @@ from .utils.image import generate_gradient_image, LightPosition
 from nodes import MAX_RESOLUTION
 from comfy.model_patcher import ModelPatcher
 import model_management
+import logging
 
 class LoadAndApplyICLightUnet:
     @classmethod
@@ -443,6 +444,16 @@ class DetailTransfer:
     FUNCTION = "process"
     CATEGORY = "IC-Light"
 
+    def adjust_mask(self, mask, target_tensor):
+        # Add a channel dimension and repeat to match the channel number of the target tensor
+        if len(mask.shape) == 3:
+            mask = mask.unsqueeze(1)  # Add a channel dimension
+            target_channels = target_tensor.shape[1]
+            mask = mask.expand(-1, target_channels, -1, -1)  # Expand the channel dimension to match the target tensor's channels
+    
+        return mask
+
+
     def process(self, target, source, mode, blur_sigma, blend_factor, mask=None):
         B, H, W, C = target.shape
         device = model_management.get_torch_device()
@@ -489,6 +500,8 @@ class DetailTransfer:
         
         tensor_out = torch.lerp(target_tensor, tensor_out, blend_factor)
         if mask is not None:
+            # Call the function and pass in mask and target_tensor
+            mask = self.adjust_mask(mask, target_tensor)
             mask = mask.to(device)
             tensor_out = torch.lerp(target_tensor, tensor_out, mask)
         tensor_out = torch.clamp(tensor_out, 0, 1)
