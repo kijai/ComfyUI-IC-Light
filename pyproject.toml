@@ -2,13 +2,13 @@
 name = "comfyui-ic-light"
 description = "ComfyUI native nodes for IC-Light"
 version = "1.0.0"
-license = "LICENSE"
+license = "Apache-2.0"
 dependencies = ["opencv-python"]
 
 [project.urls]
 Repository = "https://github.com/kijai/ComfyUI-IC-Light"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "kijai"
 DisplayName = "ComfyUI-IC-Light"
 Icon = ""
