@@ -7,10 +7,11 @@ import numpy as np
 import torch.nn.functional as F
 from comfy.utils import load_torch_file
 from .utils.convert_unet import convert_iclight_unet
-from .utils.patches import calculate_weight_adjust_channel
+from .utils.patches import calculate_weight_adjust_channel_old, calculate_weight_adjust_channel_new
 from .utils.image import generate_gradient_image, LightPosition
 from nodes import MAX_RESOLUTION
 from comfy.model_patcher import ModelPatcher
+from comfy import lora
 import model_management
 import logging
 
@@ -68,10 +69,19 @@ Used with ICLightConditioning -node
             print("LoadAndApplyICLightUnet: Added LoadICLightUnet patches")
 
             #Patch ComfyUI's LoRA weight application to accept multi-channel inputs. Thanks @huchenlei
-            try:
-                ModelPatcher.calculate_weight = calculate_weight_adjust_channel(ModelPatcher.calculate_weight)
-            except:
-                raise Exception("IC-Light: Could not patch calculate_weight")
+
+            if hasattr(ModelPatcher, 'calculate_weigh'):
+                try:
+                    ModelPatcher.calculate_weight = calculate_weight_adjust_channel_old(ModelPatcher.calculate_weight)
+                except:
+                    raise Exception("IC-Light: Could not patch calculate_weight")
+            # the function was moved to lora module in commit https://github.com/comfyanonymous/ComfyUI/commit/c26ca272076262c8b21a8f2e094cf538d88b9e46
+            else:
+                try:
+                    lora.calculate_weight = calculate_weight_adjust_channel_new(lora.calculate_weight)
+                except:
+                    raise Exception("IC-Light: Could not patch calculate_weight")
+            
             # Mimic the existing IP2P class to enable extra_conds
             def bound_extra_conds(self, **kwargs):
                  return ICLight.extra_conds(self, **kwargs)
