@@ -70,7 +70,7 @@ Used with ICLightConditioning -node
 
             #Patch ComfyUI's LoRA weight application to accept multi-channel inputs. Thanks @huchenlei
 
-            if hasattr(ModelPatcher, 'calculate_weigh'):
+            if hasattr(ModelPatcher, 'calculate_weight'):
                 try:
                     ModelPatcher.calculate_weight = calculate_weight_adjust_channel_old(ModelPatcher.calculate_weight)
                 except:
