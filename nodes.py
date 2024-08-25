@@ -70,9 +70,12 @@ Used with ICLightConditioning -node
 
             #Patch ComfyUI's LoRA weight application to accept multi-channel inputs. Thanks @huchenlei
             try:
-                lora.calculate_weight = calculate_weight_adjust_channel(lora.calculate_weight)
-            except:
-                raise Exception("IC-Light: Could not patch calculate_weight")
+                if hasattr(lora, 'calculate_weight'):
+                    lora.calculate_weight = calculate_weight_adjust_channel(lora.calculate_weight)
+                else:
+                    raise Exception("IC-Light: The 'calculate_weight' function does not exist in 'lora'")
+            except Exception as e:
+                raise Exception(f"IC-Light: Could not patch calculate_weight - {str(e)}")
             
             # Mimic the existing IP2P class to enable extra_conds
             def bound_extra_conds(self, **kwargs):
