@@ -113,6 +113,10 @@ class ICLight:
 
         process_image_in = lambda image: image
         out['c_concat'] = comfy.conds.CONDNoiseShape(process_image_in(image))
+
+        cross_attn = kwargs.get("cross_attn", None)
+        if cross_attn is not None:
+            out['c_crossattn'] = comfy.conds.CONDCrossAttn(cross_attn)
         
         adm = self.encode_adm(**kwargs)
         if adm is not None:
