@@ -53,9 +53,13 @@ Used with ICLightConditioning -node
             try:          
                 if 'conv_in.weight' in iclight_state_dict:
                     iclight_state_dict = convert_iclight_unet(iclight_state_dict)
+                    in_channels = iclight_state_dict["diffusion_model.input_blocks.0.0.weight"].shape[1]
                     prefix = ""
                 else:
                     prefix = "diffusion_model."
+                    in_channels = iclight_state_dict["input_blocks.0.0.weight"].shape[1]
+                
+                model_clone.model.model_config.unet_config["in_channels"] = in_channels
 
                 patches={
                     (prefix + key): (

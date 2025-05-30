@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-ic-light"
 description = "ComfyUI native nodes for IC-Light"
-version = "1.0.4"
+version = "1.0.5"
 license = { text = "Apache License 2.0" }
 dependencies = ["opencv-python"]
 
